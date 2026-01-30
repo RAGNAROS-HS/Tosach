@@ -35,26 +35,3 @@ print(f"Target: {target_base}")
 print("Ready for TensorFlow: tf.keras.utils.image_dataset_from_directory(target_base)")
 
 
-
-# Your dataset (post-script)
-ds = tf.keras.utils.image_dataset_from_directory(
-    r'C:\Users\Hugo\Downloads\ocr\kaggle_data\training_data',
-    image_size=(28, 28),  # Matches EMNIST; adjust if needed
-    batch_size=32,
-    label_mode='int'
-)
-
-# 1. Print structure (shows batch dims, e.g., (None, 28, 28, 3), (None,))
-print("Dataset structure:")
-print(ds.element_spec)  # Or: tf.data.experimental.structure(ds)
-
-# 2. Peek first batch shapes
-for batch_images, batch_labels in ds.take(1):
-    print(f"Images batch shape: {batch_images.shape} (batch_size, height, width, channels)")
-    print(f"Labels batch shape: {batch_labels.shape} (batch_size,)")
-    print(f"Image dtype: {batch_images.dtype}, range: [{tf.reduce_min(batch_images):.1f}, {tf.reduce_max(batch_images):.1f}]")
-    print(f"Num classes (inferred): {batch_labels.numpy().max() + 1}")
-
-# 3. Dataset info
-print(f"Class names: {ds.class_names}")  # Alphabetical folder order
-print(f"Expected classes: {len(ds.class_names)}")  # Should be 36 (0-9, A-Z)
