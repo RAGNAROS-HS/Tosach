@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+import matplotlib.pyplot as plt
 
 # Load and prepare data (Custom Dataset)
 data_dir = r'C:\Users\Hugo\Downloads\ocr\kaggle_data\training_data'
@@ -52,8 +53,34 @@ model.compile(
 )
 
 # Train
-model.fit(train_ds, validation_data=val_ds, epochs=10)
+history = model.fit(train_ds, validation_data=val_ds, epochs=10)
+
+# Plot accuracy
+plt.figure(figsize=(8, 6))
+plt.plot(history.history['sparse_categorical_accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_sparse_categorical_accuracy'], label='Validation Accuracy')
+plt.title('Model Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.savefig('training_accuracy.png')
+plt.show()
+
+# Plot loss
+plt.figure(figsize=(8, 6))
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Model Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+plt.grid(True)
+plt.savefig('training_loss.png')
+plt.show()
 
 # Save model
 model.save('ocr_model.keras')
 print("Model saved to 'ocr_model.keras'")
+print("Training accuracy saved to 'training_accuracy.png'")
+print("Training loss saved to 'training_loss.png'")
