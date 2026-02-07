@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers, models
 from tensorflow.keras import optimizers
@@ -25,15 +26,15 @@ def build_crnn(img_width, img_height, num_classes):
 
     x = layers.Conv2D(256, (3, 3), padding= "same", strides= 1, activation='relu', name='conv3')(x)
     x = layers.Conv2D(256, (3, 3), padding= "same", strides= 1, activation='relu', name='conv4')(x)
-    x = layers.MaxPooling2D(pool_size=(1, 2), strides=(1, 2), name='pool3')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 1), strides=(2, 1), name='pool3')(x)
 
     x = layers.Conv2D(512, (3, 3), padding= "same", strides= 1, activation="relu")(x)         
     x = layers.BatchNormalization()(x)                                           
     x = layers.Conv2D(512, (3, 3), padding= "same", strides= 1, activation="relu")(x)         
     x = layers.BatchNormalization()(x)                                           
-    x = layers.MaxPooling2D(pool_size=(1, 2), strides=(1, 2))(x)                
+    x = layers.MaxPooling2D(pool_size=(2, 1), strides=(2, 1), name='pool4')(x)                
     
-    x = layers.Conv2D(512, (2, 2), padding= 0, strides= 1, use_bias=False, name='conv6')(x)
+    x = layers.Conv2D(512, (2, 2), padding="valid", strides=1, use_bias=False, name='conv6')(x)
 
 
  
@@ -56,10 +57,7 @@ def build_crnn(img_width, img_height, num_classes):
     )(x)
     
     logits = layers.Dense(num_classes, activation="linear", name="logits")(x)
-    #y_softmax = layers.Activation("softmax", name="y_pred")(y_pred)
 
-
-    # model = models.Model(inputs=input_img, outputs=y_softmax, name="crnn_ctc")
     model = models.Model(inputs=inputs, outputs=logits, name="crnn_body")
     return model
 
@@ -150,20 +148,103 @@ def build_inference_model(crnn_body):
 
 
 if __name__ == "__main__":
-    img_height = 32
-    img_width = 100
-    num_classes = 37  # alphabet + blank
-    max_label_len = 25  # example
-
+    import os
+    from synthtiger_loader import (
+        create_synthtiger_dataset,
+        format_for_ctc_model,
+        BLANK_INDEX,
+        CHARS,
+        IMG_HEIGHT,
+        IMG_WIDTH
+    )
+    
+    # Configuration
+    DATA_DIR = r"E:\synthtiger_data"
+    MAX_LABEL_LEN = 93
+    BATCH_SIZE = 32
+    EPOCHS = 10
+    SUBSET_SIZE = 10000  # Set to e.g. 10000 for quick testing, None for full dataset
+    
+    # Model parameters
+    img_height = IMG_HEIGHT  # 32
+    img_width = IMG_WIDTH    # 100
+    num_classes = BLANK_INDEX + 1  # alphabet + blank
+    
+    print(f"Character set: {CHARS}")
+    print(f"Num classes: {num_classes}")
+    print(f"Image size: {img_height}x{img_width}")
+    
+    # Check if data exists
+    gt_path = os.path.join(DATA_DIR, 'gt.txt')
+    if not os.path.exists(gt_path):
+        print(f"\nERROR: Dataset not found at {DATA_DIR}")
+        print("Run extract_synthtiger.py first to extract the dataset.")
+        exit(1)
+    
+    # Create dataset
+    print(f"\nLoading dataset from {DATA_DIR}...")
+    train_ds, num_samples = create_synthtiger_dataset(
+        DATA_DIR,
+        max_label_len=MAX_LABEL_LEN,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        subset_size=SUBSET_SIZE
+    )
+    train_ds = format_for_ctc_model(train_ds)
+    
+    print(f"Dataset ready: {num_samples} samples")
+    steps_per_epoch = num_samples // BATCH_SIZE
+    print(f"Steps per epoch: {steps_per_epoch}")
+    
+    # Build model
+    print("\nBuilding model...")
     train_model, crnn_body = build_ctc_train_model(
         img_width=img_width,
         img_height=img_height,
         num_classes=num_classes,
-        max_label_len=max_label_len,
+        max_label_len=MAX_LABEL_LEN,
     )
     train_model.summary()
-    print("\nTraining model created successfully.")
-
+    
+    # Training callbacks
+    callbacks = [
+        keras.callbacks.ModelCheckpoint(
+            'crnn_model_best.keras',
+            monitor='loss',
+            save_best_only=True,
+            verbose=1
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor='loss',
+            factor=0.5,
+            patience=3,
+            min_lr=1e-6,
+            verbose=1
+        ),
+        keras.callbacks.EarlyStopping(
+            monitor='loss',
+            patience=5,
+            restore_best_weights=True,
+            verbose=1
+        ),
+    ]
+    
+    # Train
+    print(f"\nStarting training for {EPOCHS} epochs...")
+    history = train_model.fit(
+        train_ds,
+        epochs=EPOCHS,
+        steps_per_epoch=steps_per_epoch,
+        callbacks=callbacks,
+    )
+    
+    # Save final model
+    crnn_body.save('crnn_body_final.keras')
+    print("\nTraining complete! Models saved:")
+    print("  - crnn_model_best.keras (best checkpoint)")
+    print("  - crnn_body_final.keras (final CRNN body for inference)")
+    
+    # Build and save inference model
     infer_model = build_inference_model(crnn_body)
-    infer_model.summary()
-    print("\nInference model created successfully.")
+    infer_model.save('crnn_inference.keras')
+    print("  - crnn_inference.keras (inference model with softmax)")
