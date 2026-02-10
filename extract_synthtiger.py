@@ -12,6 +12,7 @@ def extract_large_zip():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
     extracted_count = 0
+    skipped_count = 0
     
     def zip_chunks():
         with open(ZIP_PATH, 'rb') as f:
@@ -27,18 +28,39 @@ def extract_large_zip():
         
         # Skip if it's a directory entry
         if file_name.endswith('/'):
+            for _ in unzipped_chunks:  # Must consume chunks even if skipping
+                pass
+            continue
+        
+        # Skip if already extracted (resume after restart)
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            for _ in unzipped_chunks:  # Must consume chunks even if skipping
+                pass
+            skipped_count += 1
+            if skipped_count % 10000 == 0:
+                print(f"Skipped {skipped_count} already-extracted files...")
             continue
             
-        # Write file in chunks
-        with open(output_path, 'wb') as f:
+        # Atomic write: write to temp file, then rename
+        # Prevents corrupt files if the computer crashes mid-write
+        tmp_path = output_path + '.tmp'
+        with open(tmp_path, 'wb') as f:
             for chunk in unzipped_chunks:
                 f.write(chunk)
+        os.replace(tmp_path, output_path)  # Atomic on Windows (NTFS)
         
         extracted_count += 1
         if extracted_count % 10000 == 0:
-            print(f"Extracted {extracted_count} files...")
+            print(f"Extracted {extracted_count} files (skipped {skipped_count})...")
     
-    print(f"\nDone! Extracted {extracted_count} files to {OUTPUT_DIR}")
+    # Clean up any orphaned .tmp files from previous crashed runs
+    for dirpath, _, filenames in os.walk(OUTPUT_DIR):
+        for fname in filenames:
+            if fname.endswith('.tmp'):
+                os.remove(os.path.join(dirpath, fname))
+    
+    print(f"\nDone! Extracted {extracted_count} new files, skipped {skipped_count} existing.")
+    print(f"Total in {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     print(f"Extracting {ZIP_PATH}")
